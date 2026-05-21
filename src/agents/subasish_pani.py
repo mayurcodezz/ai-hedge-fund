@@ -1,5 +1,6 @@
 from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.options_data import fetch_option_chain, compute_iv_percentile
+from src.tools.options_context import build_options_context
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field, AliasChoices, ConfigDict
@@ -53,12 +54,11 @@ def subasish_pani_agent(state: AgentState, agent_id: str = "subasish_pani_agent"
             analysis_results[ticker] = create_default_signal().dict()
             continue
 
-        analysis_context = {
-            "ticker": ticker,
-            "current_iv": iv_data.get("current_iv"),
-            "iv_percentile": iv_data.get("iv_percentile"),
-            "spot_price": option_chain.get("records", {}).get("underlyingValue"),
-        }
+        # Phase 1C: rich OptionsContext (atm_strikes for chart levels + iv_percentile for debit/credit decision)
+        ctx = build_options_context(option_chain, ticker=ticker)
+        if iv_data:
+            ctx.iv_percentile = iv_data.get("iv_percentile")
+        analysis_context = ctx.model_dump()
 
         output = generate_pani_output(
             analysis_data=analysis_context, state=state, agent_id=agent_id
@@ -98,7 +98,15 @@ def generate_pani_output(analysis_data: dict, state: AgentState, agent_id: str) 
         "```json\n{analysis_data}\n```\n\n"
         "Formulate a directional swing trade idea based on Subasish Pani's methodology. "
         "First, determine a directional bias (bullish/bearish). Second, check if the IV percentile is reasonable for an option buyer. "
-        "If both conditions are met, propose a simple long call or long put strategy using the monthly expiry."
+        "If both conditions are met, propose a simple long call or long put strategy using the monthly expiry. "
+        "Pani specifically examines `atm_strikes` for chart-level pricing; `iv_percentile` for whether to debit or credit.\n\n"
+        "DATA CITATION REQUIREMENTS (non-negotiable):\n"
+        "- Cite at least 2 specific strikes from atm_strikes or the chain\n"
+        "- Cite iv_percentile or atm_iv with a number\n"
+        "- Cite the trading_symbol for the leg(s) you propose\n"
+        "- Cite max_pain if discussing levels\n"
+        "- Cite spot price with a number\n"
+        "- Reasoning without specific numbers will fail the data-anchored validator."
     )
 
     template = ChatPromptTemplate.from_messages([

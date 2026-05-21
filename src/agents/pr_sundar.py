@@ -1,5 +1,6 @@
 from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.options_data import fetch_option_chain, compute_iv_percentile
+from src.tools.options_context import build_options_context
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field, AliasChoices, ConfigDict
@@ -53,11 +54,12 @@ def pr_sundar_agent(state: AgentState, agent_id: str = "pr_sundar_agent"):
             analysis_results[ticker] = create_default_signal().dict()
             continue
 
-        analysis_context = {
-            "ticker": ticker,
-            "iv_percentile": iv_data.get("iv_percentile"),
-            "spot_price": option_chain.get("records", {}).get("underlyingValue"),
-        }
+        # Phase 1C: rich OptionsContext (288 strikes + OI walls + max_pain + PCR + greeks)
+        # replaces the 3-field stub. Personas now have data to anchor reasoning in.
+        ctx = build_options_context(option_chain, ticker=ticker)
+        if iv_data:
+            ctx.iv_percentile = iv_data.get("iv_percentile")
+        analysis_context = ctx.model_dump()
 
         output = generate_sundar_output(
             analysis_data=analysis_context, state=state, agent_id=agent_id
@@ -97,7 +99,15 @@ def generate_sundar_output(analysis_data: dict, state: AgentState, agent_id: str
         "```json\n{analysis_data}\n```\n\n"
         "Based on this data, propose a high-probability weekly options selling strategy in the style of P.R. Sundar. "
         "Identify a safe OTM call strike and a safe OTM put strike to form a short strangle or a credit spread. "
-        "The signal should be for the nearest weekly expiry."
+        "The signal should be for the nearest weekly expiry. "
+        "PR Sundar specifically examines `max_pain`, `top_oi_calls`, `top_oi_puts`. Sell strangles outside the OI walls; use max_pain as the central magnet.\n\n"
+        "DATA CITATION REQUIREMENTS (non-negotiable — validator will reject vocabulary-only output):\n"
+        "- Cite at least 2 specific strike prices from atm_strikes / top_oi_calls / top_oi_puts (e.g., \"23800 CE\", \"23500 PE\")\n"
+        "- Cite at least 1 specific IV value from atm_iv or chain (e.g., \"IV 15.3%\")\n"
+        "- Cite OI counts when discussing OI walls (e.g., \"166k OI\")\n"
+        "- Cite max_pain explicitly if relevant to setup\n"
+        "- Cite trading_symbols (e.g., \"NIFTY26MAY23800CE\") for each leg you propose\n"
+        "- Reasoning without specific numbers will fail the data-anchored validator."
     )
 
     template = ChatPromptTemplate.from_messages([

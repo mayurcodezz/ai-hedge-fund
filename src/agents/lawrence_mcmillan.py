@@ -1,5 +1,6 @@
 from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.options_data import fetch_option_chain
+from src.tools.options_context import build_options_context
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field, AliasChoices, ConfigDict
@@ -80,11 +81,12 @@ def lawrence_mcmillan_agent(state: AgentState, agent_id: str = "lawrence_mcmilla
             continue
 
         sentiment_indicators = extract_sentiment_indicators(option_chain)
-        analysis_context = {
-            "ticker": ticker,
-            "spot_price": option_chain.get("records", {}).get("underlyingValue"),
-            **sentiment_indicators
-        }
+
+        # Phase 1C: rich OptionsContext (PCR + top_oi_calls/puts + max_pain). McMillan's bread and butter.
+        ctx = build_options_context(option_chain, ticker=ticker)
+        analysis_context = ctx.model_dump()
+        # Preserve McMillan's legacy sentiment indicators alongside rich context
+        analysis_context["legacy_sentiment"] = sentiment_indicators
 
         output = generate_mcmillan_output(
             analysis_data=analysis_context, state=state, agent_id=agent_id
@@ -122,7 +124,14 @@ def generate_mcmillan_output(analysis_data: dict, state: AgentState, agent_id: s
         "Synthesize the following sentiment and price data for {ticker}:\n\n"
         "```json\n{analysis_data}\n```\n\n"
         "Based on McMillan's methodology, interpret the put-call ratio and max OI strikes. "
-        "Combine these interpretations to form a bullish, bearish, or neutral signal and suggest an appropriate, simple options strategy."
+        "Combine these interpretations to form a bullish, bearish, or neutral signal and suggest an appropriate, simple options strategy. "
+        "McMillan specifically examines `pcr_oi`, `pcr_volume`, `top_oi_calls`, `top_oi_puts`. PCR signals + OI walls.\n\n"
+        "DATA CITATION REQUIREMENTS (non-negotiable):\n"
+        "- Cite pcr_oi with a number (e.g., \"PCR 0.87\")\n"
+        "- Cite at least 1 max-OI strike from top_oi_calls or top_oi_puts (e.g., \"23800 CE max-OI 166k\")\n"
+        "- Cite at least 2 specific strikes\n"
+        "- Cite specific OI counts (3-digit minimum) for the OI walls you reference\n"
+        "- Reasoning without specific PCR + OI numbers will fail the data-anchored validator."
     )
 
     template = ChatPromptTemplate.from_messages([

@@ -1,5 +1,6 @@
 from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.options_data import fetch_option_chain, compute_iv_percentile
+from src.tools.options_context import build_options_context
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field, AliasChoices, ConfigDict
@@ -53,11 +54,11 @@ def tony_saliba_agent(state: AgentState, agent_id: str = "tony_saliba_agent"):
             analysis_results[ticker] = create_default_signal().dict()
             continue
 
-        analysis_context = {
-            "ticker": ticker,
-            "iv_percentile": iv_data.get("iv_percentile"),
-            "spot_price": option_chain.get("records", {}).get("underlyingValue"),
-        }
+        # Phase 1C: rich OptionsContext (delta_15 strikes for iron condor wings)
+        ctx = build_options_context(option_chain, ticker=ticker)
+        if iv_data:
+            ctx.iv_percentile = iv_data.get("iv_percentile")
+        analysis_context = ctx.model_dump()
 
         output = generate_saliba_output(
             analysis_data=analysis_context, state=state, agent_id=agent_id
@@ -97,7 +98,15 @@ def generate_saliba_output(analysis_data: dict, state: AgentState, agent_id: str
         "```json\n{analysis_data}\n```\n\n"
         "Based on this data, propose a defined-risk options spread trade in the style of Tony Saliba. "
         "Focus on a high probability of profit and a clear, acceptable maximum loss. "
-        "Specify the exact structure and strikes."
+        "Specify the exact structure and strikes. "
+        "Saliba specifically examines `delta_15_call_strike` and `delta_15_put_strike` for short strikes; wings at 100-pt below/above for defined max-loss.\n\n"
+        "DATA CITATION REQUIREMENTS (non-negotiable):\n"
+        "- Cite delta_15_call_strike and delta_15_put_strike (or atm_strikes alternatives) — these are your potential shorts\n"
+        "- Cite at least 2 specific strikes for the structure (shorts + wings)\n"
+        "- Cite the trading_symbols for each leg\n"
+        "- Cite max_loss with a number (compute it from wing-width × lot_size minus net credit)\n"
+        "- Cite at least 1 OI count or IV value from the data\n"
+        "- Reasoning without specific strike numbers and max-loss will fail the data-anchored validator."
     )
 
     template = ChatPromptTemplate.from_messages([

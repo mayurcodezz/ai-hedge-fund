@@ -17,9 +17,14 @@ from src.tools.api import (
     prices_to_df,
     search_line_items,
 )
+from src.tools.options_data import fetch_option_chain, compute_iv_percentile
+from src.tools.options_context import build_options_context
 from src.utils.llm import call_llm
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
+
+# Indian-index option underlyings — branch to options-path; everything else uses equity path
+OPTIONS_TICKERS = {"NIFTY", "BANKNIFTY", "FINNIFTY"}
 
 
 class NassimTalebSignal(BaseModel):
@@ -31,10 +36,30 @@ class NassimTalebSignal(BaseModel):
 
 
 def nassim_taleb_agent(state: AgentState, agent_id: str = "nassim_taleb_agent"):
-    """Analyzes stocks using Taleb's antifragility, tail risk, and convexity principles."""
+    """Analyzes assets using Taleb's antifragility, tail risk, and convexity principles.
+
+    Branches by asset class:
+    - NIFTY/BANKNIFTY/FINNIFTY: options-context path (Phase 1C — uses OptionsContext)
+    - Everything else: equity path (existing fundamentals-based analysis)
+    """
     data = state["data"]
-    end_date = data["end_date"]
     tickers = data["tickers"]
+
+    # Split tickers by asset class
+    options_tickers = [t for t in tickers if t.upper() in OPTIONS_TICKERS]
+    equity_tickers = [t for t in tickers if t.upper() not in OPTIONS_TICKERS]
+
+    # Handle options path first (Phase 1C)
+    if options_tickers:
+        taleb_options_path(state, agent_id, options_tickers)
+
+    # If no equity tickers, exit early
+    if not equity_tickers:
+        return {"messages": state.get("messages", []), "data": state["data"]}
+
+    # Existing equity path continues below
+    end_date = data["end_date"]
+    tickers = equity_tickers
     api_key = get_api_key_from_state(state, "FINANCIAL_DATASETS_API_KEY")
 
     # Look one year back for insider trades and news
@@ -167,6 +192,93 @@ def nassim_taleb_agent(state: AgentState, agent_id: str = "nassim_taleb_agent"):
     progress.update_status(agent_id, None, "Done")
 
     return {"messages": [message], "data": state["data"]}
+
+
+###############################################################################
+# Options path (Phase 1C — for NIFTY/BANKNIFTY/FINNIFTY)
+###############################################################################
+
+
+def taleb_options_path(state: AgentState, agent_id: str, tickers: list):
+    """Taleb's lens applied to Indian index options. Uses OptionsContext + tail-risk reasoning."""
+    if "analyst_signals" not in state["data"]:
+        state["data"]["analyst_signals"] = {}
+
+    for ticker in tickers:
+        progress.update_status(agent_id, ticker, f"Tail-risk analysis on {ticker} options")
+        option_chain = fetch_option_chain(ticker)
+        iv_data = compute_iv_percentile(ticker)
+
+        if not option_chain:
+            signal = NassimTalebSignal(
+                signal="neutral",
+                confidence=50,
+                reasoning=f"No options chain for {ticker} — via negativa says walk away.",
+            )
+        else:
+            ctx = build_options_context(option_chain, ticker=ticker)
+            if iv_data:
+                ctx.iv_percentile = iv_data.get("iv_percentile")
+            analysis_context = ctx.model_dump()
+
+            signal = generate_taleb_options_output(
+                ticker=ticker,
+                analysis_context=analysis_context,
+                state=state,
+                agent_id=agent_id,
+            )
+
+        # Write to analyst_signals in the same shape options personas use
+        if agent_id not in state["data"]["analyst_signals"]:
+            state["data"]["analyst_signals"][agent_id] = {}
+        state["data"]["analyst_signals"][agent_id][ticker] = {
+            "signal": signal.signal,
+            "confidence": signal.confidence,
+            "reasoning": signal.reasoning,
+        }
+
+
+def generate_taleb_options_output(
+    ticker: str,
+    analysis_context: dict,
+    state: AgentState,
+    agent_id: str,
+) -> NassimTalebSignal:
+    """Taleb LLM call on options data."""
+    template = ChatPromptTemplate.from_messages([
+        ("system",
+            "You are Nassim Nicholas Taleb — former options trader at Indosuez/BNP, founder of Empirica, advisor to Universa. "
+            "I treat ALL decisions via negativa — what to AVOID is the alpha. Models are wrong, but ruin is permanent. "
+            "On NIFTY options, my framework: examine `iv_percentile`, `top_oi_puts` (where the crash protection is priced), "
+            "`skew_25d` (tail premium), `delta_15_put_strike` (the price of insurance). "
+            "Bullish (long-vol bias): suspiciously low IV percentile + flat skew = market is in 'turkey' state, time to BUY tail-risk insurance via deep OTM puts. "
+            "Bearish (short-vol-of-vol): elevated IV percentile + steep skew = insurance is priced rich, perhaps fade. "
+            "Neutral: mid-IV regime, no clear edge, walk away. "
+            "Hedge-fund language: think like a head-of-risk at Empirica. Cite specific strikes, IVs, OI counts. "
+            "In the reasoning field, sound like Taleb — erudite, contrarian, hostile to Gaussian thinking. Use: 'via negativa', 'fat tails', 'fragility', 'convexity', 'turkey', 'IYI', 'barbell', 'skin in the game'. "
+            "DATA CITATION REQUIREMENT (non-negotiable): cite at least 1 specific strike from the chain AND 1 IV value AND 1 OI count. "
+            "Keep reasoning under 250 chars."
+        ),
+        ("human",
+            "Ticker: {ticker}\n\nOptions context:\n```json\n{ctx}\n```\n\n"
+            "Return: {{\"signal\": \"bullish\"|\"bearish\"|\"neutral\", \"confidence\": int 0-100, \"reasoning\": \"...\"}}"
+        ),
+    ])
+    prompt = template.invoke({
+        "ticker": ticker,
+        "ctx": json.dumps(analysis_context, indent=2, default=str),
+    })
+
+    def _default():
+        return NassimTalebSignal(signal="neutral", confidence=50, reasoning="LLM failure on options path.")
+
+    return call_llm(
+        prompt=prompt,
+        pydantic_model=NassimTalebSignal,
+        agent_name=agent_id,
+        state=state,
+        default_factory=_default,
+    )
 
 
 ###############################################################################

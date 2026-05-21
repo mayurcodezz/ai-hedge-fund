@@ -1,5 +1,6 @@
 from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.options_data import fetch_option_chain, compute_iv_percentile, compute_iv_term_structure
+from src.tools.options_context import build_options_context
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field, AliasChoices, ConfigDict
@@ -55,13 +56,12 @@ def sheldon_natenberg_agent(state: AgentState, agent_id: str = "sheldon_natenber
 
         term_structure = compute_iv_term_structure(option_chain)
 
-        analysis_context = {
-            "ticker": ticker,
-            "iv_percentile": iv_data.get("iv_percentile"),
-            "current_iv": iv_data.get("current_iv"),
-            "spot_price": option_chain.get("records", {}).get("underlyingValue"),
-            "iv_term_structure": term_structure,
-        }
+        # Phase 1C: rich OptionsContext (atm_iv, skew_25d, greeks, delta-keyed strikes)
+        ctx = build_options_context(option_chain, ticker=ticker)
+        if iv_data:
+            ctx.iv_percentile = iv_data.get("iv_percentile")
+        analysis_context = ctx.model_dump()
+        analysis_context["iv_term_structure"] = term_structure  # Natenberg-specific extra
 
         output = generate_natenberg_output(
             analysis_data=analysis_context, state=state, agent_id=agent_id
@@ -100,7 +100,14 @@ def generate_natenberg_output(analysis_data: dict, state: AgentState, agent_id: 
         "```json\n{analysis_data}\n```\n\n"
         "Based on this data, provide a trade signal according to Sheldon Natenberg's framework. "
         "Justify your choice of strategy by referencing the provided volatility metrics. "
-        "For premium selling, target strikes around 1 standard deviation (approx. 15-20 delta)."
+        "For premium selling, target strikes around 1 standard deviation (approx. 15-20 delta). "
+        "Natenberg specifically examines `atm_iv`, `iv_percentile`, `skew_25d`, `iv_term_structure`. Cite greeks at the strikes you propose.\n\n"
+        "DATA CITATION REQUIREMENTS (non-negotiable):\n"
+        "- Cite specific greek values (delta, theta, vega) with numbers from atm_strikes or the delta-keyed strikes\n"
+        "- Cite atm_iv and at least one skew/IV number\n"
+        "- Cite at least 2 specific strikes from the chain\n"
+        "- For credit spreads: cite the trading_symbols you'd use for each leg\n"
+        "- Reasoning without specific greek numbers will fail the data-anchored validator."
     )
 
     template = ChatPromptTemplate.from_messages([

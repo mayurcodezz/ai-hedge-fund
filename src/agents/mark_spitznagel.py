@@ -1,5 +1,6 @@
 from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.options_data import fetch_option_chain, compute_iv_percentile
+from src.tools.options_context import build_options_context
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field, AliasChoices, ConfigDict
@@ -53,12 +54,11 @@ def mark_spitznagel_agent(state: AgentState, agent_id: str = "mark_spitznagel_ag
             analysis_results[ticker] = create_default_signal().dict()
             continue
 
-        analysis_context = {
-            "ticker": ticker,
-            "iv_percentile": iv_data.get("iv_percentile"),
-            "current_iv": iv_data.get("current_iv"),
-            "spot_price": option_chain.get("records", {}).get("underlyingValue"),
-        }
+        # Phase 1C: rich OptionsContext (full chain with greeks/OI/delta-keyed strikes)
+        ctx = build_options_context(option_chain, ticker=ticker)
+        if iv_data:
+            ctx.iv_percentile = iv_data.get("iv_percentile")
+        analysis_context = ctx.model_dump()
 
         output = generate_spitznagel_output(
             analysis_data=analysis_context, state=state, agent_id=agent_id
@@ -96,7 +96,14 @@ def generate_spitznagel_output(analysis_data: dict, state: AgentState, agent_id:
         "Analyze the following market data for {ticker}:\n\n"
         "```json\n{analysis_data}\n```\n\n"
         "Based on this data, provide a signal from Mark Spitznagel's perspective. "
-        "If recommending a trade, specify deep OTM strikes (e.g., 20-30% below current spot price) and a longer-term expiry (3-6 months) to capture a potential crisis event."
+        "If recommending a trade, specify deep OTM strikes (e.g., 20-30% below current spot price) and a longer-term expiry (3-6 months) to capture a potential crisis event. "
+        "Spitznagel specifically examines `delta_15_put_strike` and its `ltp` for the cost of deep OTM put hedges.\n\n"
+        "DATA CITATION REQUIREMENTS (non-negotiable):\n"
+        "- Cite the delta_15_put_strike and its premium (ltp) from the data\n"
+        "- Cite at least 1 specific IV value from atm_iv or the chain (e.g., \"IV 15.3%\")\n"
+        "- Cite at least 2 specific strikes from atm_strikes or top_oi_puts\n"
+        "- Cite the trading_symbol if proposing a leg\n"
+        "- Reasoning without specific numbers will fail the data-anchored validator."
     )
 
     template = ChatPromptTemplate.from_messages([
