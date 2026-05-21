@@ -1,0 +1,110 @@
+from src.graph.state import AgentState, show_agent_reasoning
+from src.tools.options_data import fetch_option_chain, compute_iv_percentile, compute_iv_term_structure
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
+import json
+from typing import List
+from typing_extensions import Literal
+from src.utils.progress import progress
+from src.utils.llm import call_llm
+
+class EuanSinclairSignal(BaseModel):
+    signal: Literal["mean_reversion_sell_vol", "mean_reversion_buy_vol", "skew_trade", "neutral"]
+    confidence: float
+    preferred_structure: Literal["short_strangle", "long_straddle", "risk_reversal", "no_trade"]
+    preferred_strikes: List[int] = Field(default_factory=list)
+    preferred_expiry: str = Field(default="")
+    reasoning: str = Field(..., description="Detailed reasoning based on Sinclair's quantitative approach to volatility trading, referencing mean-reversion, skew, and vol-of-vol.")
+    expected_holding_days: int = Field(default=10)
+
+def euan_sinclair_agent(state: AgentState, agent_id: str = "euan_sinclair_agent"):
+    """
+    Analyzes options opportunities from a quantitative volatility perspective, like Euan Sinclair.
+    Focuses on volatility mean-reversion, skew, and term structure.
+    """
+    data = state["data"]
+    tickers = data.get("tickers", [])
+    if not tickers:
+        return {"messages": [], "data": state["data"]}
+        
+    analysis_results = {}
+
+    for ticker in tickers:
+        progress.update_status(agent_id, ticker, "Running quantitative vol models")
+        
+        option_chain = fetch_option_chain(ticker)
+        iv_data = compute_iv_percentile(ticker)
+
+        if not iv_data or not option_chain:
+            progress.update_status(agent_id, ticker, "Could not fetch vol/chain data")
+            analysis_results[ticker] = create_default_signal().dict()
+            continue
+
+        term_structure = compute_iv_term_structure(option_chain)
+        
+        analysis_context = {
+            "ticker": ticker,
+            "iv_percentile": iv_data.get("iv_percentile"),
+            "current_iv": iv_data.get("current_iv"),
+            "iv_term_structure": term_structure,
+            # Note: A real implementation would add more quantitative factors like skew indices.
+        }
+
+        output = generate_sinclair_output(
+            analysis_data=analysis_context, state=state, agent_id=agent_id
+        )
+        analysis_results[ticker] = output.dict()
+
+    message = HumanMessage(content=json.dumps(analysis_results), name=agent_id)
+    if state["metadata"].get("show_reasoning"):
+        show_agent_reasoning(analysis_results, "Euan Sinclair Agent")
+    
+    if "analyst_signals" not in state["data"]:
+        state["data"]["analyst_signals"] = {}
+    state["data"]["analyst_signals"][agent_id] = analysis_results
+    return {"messages": [message], "data": state["data"]}
+
+def create_default_signal():
+    return EuanSinclairSignal(
+        signal="neutral", 
+        confidence=0.0, 
+        preferred_structure="no_trade",
+        reasoning="Failed to generate analysis due to data or model error."
+    )
+
+def generate_sinclair_output(analysis_data: dict, state: AgentState, agent_id: str) -> EuanSinclairSignal:
+    system_prompt = (
+        "You are Dr. Euan Sinclair — PhD theoretical physics, 20+ years quant options trader at Bluefin, author of 'Volatility Trading', 'Option Trading', and 'Positional Option Trading'. I trade vol-of-vol and statistical edge, not direction. "
+        "Core thesis: the only durable edge in options is statistical — the volatility risk premium (IV systematically > realized) and the mean-reversion of IV itself. Direction is mostly noise. Most retail strategies (covered calls, CSPs) have negative expected value vs. simply holding the underlying. "
+        "Default playbook: IV percentile > 70 → mean_reversion_sell_vol via short_strangle, ~15-delta shorts, delta-hedged. IV percentile < 25 → mean_reversion_buy_vol via long_straddle near ATM. Steep/cheap skew dislocation → skew_trade via risk_reversal (sell rich put, buy cheap call or inverse). Otherwise neutral / no_trade. "
+        "Hard avoids: directional bets dressed up as options trades, trading on <50-trade sample size, ignoring vol-regime change, naive backtests that don't account for vol clustering. Sample size is everything; one trade is anecdote. "
+        "Famous principle: 'Volatility is the asset; everything else is a byproduct.' Be Bayesian — update on evidence, not narrative. "
+        "In the reasoning field, sound like Sinclair: detached, quantitative, mildly skeptical; reference 'vol risk premium', 'IV percentile', 'mean-reverting', 'skew steepness', 'term structure', 'expected value', 'sample size', 'Bayesian'. Keep under 200 chars."
+    )
+    
+    human_prompt = (
+        "Perform a quantitative volatility analysis on the following data for {ticker}:\n\n"
+        "```json\n{analysis_data}\n```\n\n"
+        "Based on this data, propose a trade from Euan Sinclair's perspective. "
+        "Is volatility likely to mean-revert from its current level? Does the term structure offer any arbitrage-like opportunities? "
+        "Provide a clear, evidence-based rationale for your signal."
+    )
+
+    template = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", human_prompt),
+    ])
+    
+    prompt = template.invoke({
+        "ticker": analysis_data["ticker"],
+        "analysis_data": json.dumps(analysis_data, indent=2)
+    })
+
+    return call_llm(
+        prompt=prompt,
+        pydantic_model=EuanSinclairSignal,
+        agent_name=agent_id,
+        state=state,
+        default_factory=create_default_signal,
+    )
