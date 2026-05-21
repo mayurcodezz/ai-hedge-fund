@@ -4,7 +4,7 @@ from src.tools.options_context import build_options_context
 from src.tools.historical_context import fetch_historical_context
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
-from pydantic import BaseModel, Field, AliasChoices, ConfigDict
+from pydantic import BaseModel, Field, AliasChoices, ConfigDict, field_validator
 import json
 from typing import List
 from src.utils.progress import progress
@@ -31,6 +31,15 @@ class SheldonNatenbergSignal(BaseModel):
     )
     reasoning: str = Field(default="", description="Detailed reasoning based on Natenberg's principles of volatility, probability, and greeks.")
     expected_holding_days: int = Field(default=0, description="Typical holding period for the proposed trade.")
+
+    @field_validator("preferred_structure", mode="before")
+    @classmethod
+    def _coerce_structure_to_str(cls, v):
+        """Gemini sometimes returns strategy as nested dict {name, legs}. Coerce to string."""
+        if isinstance(v, dict):
+            return str(v.get("name") or v.get("structure") or v.get("strategy") or "no_trade")
+        return v
+
 
 def sheldon_natenberg_agent(state: AgentState, agent_id: str = "sheldon_natenberg_agent"):
     """
@@ -63,6 +72,7 @@ def sheldon_natenberg_agent(state: AgentState, agent_id: str = "sheldon_natenber
         if hist.iv_percentile_1y is not None:
             ctx.iv_percentile = hist.iv_percentile_1y
         analysis_context = ctx.model_dump()
+        analysis_context["ticker"] = ticker  # legacy key for prompt templates
         analysis_context["iv_term_structure"] = term_structure
         analysis_context["historical"] = hist.model_dump()
 

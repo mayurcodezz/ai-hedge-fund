@@ -4,7 +4,7 @@ from src.tools.options_context import build_options_context
 from src.tools.historical_context import fetch_historical_context
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
-from pydantic import BaseModel, Field, AliasChoices, ConfigDict
+from pydantic import BaseModel, Field, AliasChoices, ConfigDict, field_validator
 import json
 from typing import List
 from src.utils.progress import progress
@@ -31,6 +31,15 @@ class TonySalibaSignal(BaseModel):
     )
     reasoning: str = Field(default="", description="Reasoning must focus on risk/reward, max loss, and defined-risk nature of the trade, in Saliba's style.")
     expected_holding_days: int = Field(default=0)
+
+    @field_validator("preferred_structure", mode="before")
+    @classmethod
+    def _coerce_structure_to_str(cls, v):
+        """Gemini sometimes returns strategy as nested dict {name, legs}. Coerce to string."""
+        if isinstance(v, dict):
+            return str(v.get("name") or v.get("structure") or v.get("strategy") or "no_trade")
+        return v
+
 
 def tony_saliba_agent(state: AgentState, agent_id: str = "tony_saliba_agent"):
     """
@@ -61,6 +70,7 @@ def tony_saliba_agent(state: AgentState, agent_id: str = "tony_saliba_agent"):
         if hist.iv_percentile_1y is not None:
             ctx.iv_percentile = hist.iv_percentile_1y
         analysis_context = ctx.model_dump()
+        analysis_context["ticker"] = ticker  # legacy key for prompt templates
         analysis_context["historical"] = hist.model_dump()
 
         output = generate_saliba_output(

@@ -34,8 +34,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
-from langchain_core.messages import HumanMessage
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from src.graph.state import AgentState, show_agent_reasoning
 from src.utils.llm import call_llm
@@ -353,12 +352,12 @@ def run_round_2(state: AgentState, persona_id: str, agent_id: Optional[str] = No
             options_context=options_context,
         )
 
-        # Build template using the persona's system_prompt_summary
-        template = ChatPromptTemplate.from_messages([
-            ("system", registry_entry["system_prompt_summary"]),
-            ("human", human_prompt),
-        ])
-        prompt = template.invoke({})
+        # Build messages directly — bypass ChatPromptTemplate to avoid template-variable
+        # parsing of literal JSON content inside the human prompt ('{' / '}' chars).
+        prompt = [
+            SystemMessage(content=registry_entry["system_prompt_summary"]),
+            HumanMessage(content=human_prompt),
+        ]
 
         # Call LLM with the persona's Signal class for structured output
         try:
