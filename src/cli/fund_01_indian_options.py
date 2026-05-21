@@ -120,6 +120,27 @@ def main():
             "plan_summary": str(plan)[:300] if plan else "no-plan",
         }) + "\n")
 
+    # Phase 2X: ATLAS track-record capture — every run appends to track-record/decisions.jsonl
+    # so paper-test history accrues from Day 1 of operation. Recursive self-improvement
+    # loop (Bayesian persona weights in portfolio_manager_options) reads outcomes.jsonl.
+    try:
+        from src.tools.decision_logger import DecisionRecord, append_decision, recompute_summary
+        # Pull research_digest if present (Phase 2A/B writes it)
+        if isinstance(final, dict) and "data" in final and final["data"].get("research_digest"):
+            record["research_digest"] = final["data"]["research_digest"]
+        decision_record = DecisionRecord.from_run_state(record)
+        append_decision(decision_record)
+        # Update running summary (cheap, deterministic)
+        summary = recompute_summary(save_to_disk=True)
+        print(f"\n[track-record] decision logged · run_id={decision_record.run_id}")
+        print(f"[track-record] total decisions: {summary.total_decisions} "
+              f"(traded={summary.traded_count}, no_trade={summary.no_trade_count})")
+        if summary.win_rate is not None:
+            print(f"[track-record] win rate: {summary.win_rate:.1%} on {summary.closed_count} closes "
+                  f"· total P&L: ₹{summary.total_pnl_inr:,.0f}")
+    except Exception as e:
+        print(f"[track-record] warn: capture failed: {e}")
+
     print(f"\n=== TradePlan ({args.symbol}) ===")
     print(json.dumps(plan, indent=2, default=str)[:3000])
     print(f"\nFull output: {out_file}")
