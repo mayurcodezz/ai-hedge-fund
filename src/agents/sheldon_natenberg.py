@@ -9,6 +9,9 @@ import json
 from typing import List
 from src.utils.progress import progress
 from src.utils.llm import call_llm
+from src.utils.persona_knowledge import load_persona_knowledge
+
+_KNOWLEDGE_SNIPPET = load_persona_knowledge("sheldon_natenberg_agent") or ""
 
 class SheldonNatenbergSignal(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
@@ -140,4 +143,4 @@ def generate_natenberg_output(analysis_data: dict, state: AgentState, agent_id: 
         agent_name=agent_id,
         state=state,
         default_factory=create_default_signal,
-    )
+    ) + _KNOWLEDGE_SNIPPET

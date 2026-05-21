@@ -9,6 +9,9 @@ import json
 from typing import List, Dict, Any
 from src.utils.progress import progress
 from src.utils.llm import call_llm
+from src.utils.persona_knowledge import load_persona_knowledge
+
+_KNOWLEDGE_SNIPPET = load_persona_knowledge("lawrence_mcmillan_agent") or ""
 
 class LawrenceMcMillanSignal(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
@@ -165,4 +168,4 @@ def generate_mcmillan_output(analysis_data: dict, state: AgentState, agent_id: s
         agent_name=agent_id,
         state=state,
         default_factory=create_default_signal,
-    )
+    ) + _KNOWLEDGE_SNIPPET
