@@ -96,9 +96,13 @@ def create_default_response(model_class: type[BaseModel]) -> BaseModel:
             default_values[field_name] = 0
         elif hasattr(field.annotation, "__origin__") and field.annotation.__origin__ == dict:
             default_values[field_name] = {}
+        elif hasattr(field.annotation, "__origin__") and field.annotation.__origin__ in (list, tuple, set, frozenset):
+            # FIX (2026-05-21): List[int], List[str], etc. — return empty container, not the inner type.
+            default_values[field_name] = []
         else:
             # For other types (like Literal), try to use the first allowed value
             if hasattr(field.annotation, "__args__"):
+                # Literal["a","b","c"] → "a". But NOT List[int] → don't use int as value (caught above).
                 default_values[field_name] = field.annotation.__args__[0]
             else:
                 default_values[field_name] = None
