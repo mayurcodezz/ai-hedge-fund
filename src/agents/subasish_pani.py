@@ -1,6 +1,7 @@
 from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.options_data import fetch_option_chain, compute_iv_percentile
 from src.tools.options_context import build_options_context
+from src.tools.historical_context import fetch_historical_context
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field, AliasChoices, ConfigDict
@@ -54,11 +55,13 @@ def subasish_pani_agent(state: AgentState, agent_id: str = "subasish_pani_agent"
             analysis_results[ticker] = create_default_signal().dict()
             continue
 
-        # Phase 1C: rich OptionsContext (atm_strikes for chart levels + iv_percentile for debit/credit decision)
+        # Phase 1C+1E: rich OptionsContext + REAL IV percentile + spot 30d range (Pani chart-first)
         ctx = build_options_context(option_chain, ticker=ticker)
-        if iv_data:
-            ctx.iv_percentile = iv_data.get("iv_percentile")
+        hist = fetch_historical_context(ticker, current_iv=ctx.atm_iv)
+        if hist.iv_percentile_1y is not None:
+            ctx.iv_percentile = hist.iv_percentile_1y
         analysis_context = ctx.model_dump()
+        analysis_context["historical"] = hist.model_dump()
 
         output = generate_pani_output(
             analysis_data=analysis_context, state=state, agent_id=agent_id

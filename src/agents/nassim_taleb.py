@@ -19,6 +19,7 @@ from src.tools.api import (
 )
 from src.tools.options_data import fetch_option_chain, compute_iv_percentile
 from src.tools.options_context import build_options_context
+from src.tools.historical_context import fetch_historical_context
 from src.utils.llm import call_llm
 from src.utils.progress import progress
 from src.utils.api_key import get_api_key_from_state
@@ -217,9 +218,11 @@ def taleb_options_path(state: AgentState, agent_id: str, tickers: list):
             )
         else:
             ctx = build_options_context(option_chain, ticker=ticker)
-            if iv_data:
-                ctx.iv_percentile = iv_data.get("iv_percentile")
+            hist = fetch_historical_context(ticker, current_iv=ctx.atm_iv)
+            if hist.iv_percentile_1y is not None:
+                ctx.iv_percentile = hist.iv_percentile_1y
             analysis_context = ctx.model_dump()
+            analysis_context["historical"] = hist.model_dump()
 
             signal = generate_taleb_options_output(
                 ticker=ticker,

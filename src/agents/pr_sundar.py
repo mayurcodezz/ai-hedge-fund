@@ -1,6 +1,7 @@
 from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.options_data import fetch_option_chain, compute_iv_percentile
 from src.tools.options_context import build_options_context
+from src.tools.historical_context import fetch_historical_context
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field, AliasChoices, ConfigDict
@@ -54,12 +55,14 @@ def pr_sundar_agent(state: AgentState, agent_id: str = "pr_sundar_agent"):
             analysis_results[ticker] = create_default_signal().dict()
             continue
 
-        # Phase 1C: rich OptionsContext (288 strikes + OI walls + max_pain + PCR + greeks)
-        # replaces the 3-field stub. Personas now have data to anchor reasoning in.
+        # Phase 1C+1E: rich OptionsContext + real HistoricalContext (Phase 1D)
+        # 288 strikes + OI walls + max_pain + PCR + greeks + REAL 1Y IV percentile + VRP
         ctx = build_options_context(option_chain, ticker=ticker)
-        if iv_data:
-            ctx.iv_percentile = iv_data.get("iv_percentile")
+        hist = fetch_historical_context(ticker, current_iv=ctx.atm_iv)
+        if hist.iv_percentile_1y is not None:
+            ctx.iv_percentile = hist.iv_percentile_1y  # REAL, from yfinance 1Y INDIAVIX
         analysis_context = ctx.model_dump()
+        analysis_context["historical"] = hist.model_dump()
 
         output = generate_sundar_output(
             analysis_data=analysis_context, state=state, agent_id=agent_id
