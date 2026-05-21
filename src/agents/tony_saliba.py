@@ -2,21 +2,33 @@ from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.options_data import fetch_option_chain, compute_iv_percentile
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices, ConfigDict
 import json
 from typing import List
-from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
 
 class TonySalibaSignal(BaseModel):
-    signal: Literal["bullish", "bearish", "neutral"]
-    confidence: float
-    preferred_structure: Literal["iron_butterfly", "iron_condor", "bull_call_spread", "bear_put_spread", "no_trade"]
-    preferred_strikes: List[int] = Field(default_factory=list, description="All strikes involved in the spread.")
-    preferred_expiry: str = Field(default="", description="Typically near-term, e.g., 'Weekly'.")
-    reasoning: str = Field(..., description="Reasoning must focus on risk/reward, max loss, and defined-risk nature of the trade, in Saliba's style.")
-    expected_holding_days: int = Field(default=5)
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    signal: str = Field(default="neutral", description="bullish/bearish/neutral/no_trade")
+    confidence: float = Field(default=50.0, description="0-100")
+    preferred_structure: str = Field(
+        default="no_trade",
+        validation_alias=AliasChoices("preferred_structure", "strategy", "structure"),
+    )
+    preferred_strikes: List[int] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("preferred_strikes", "strikes"),
+        description="All strikes involved in the spread.",
+    )
+    preferred_expiry: str = Field(
+        default="",
+        validation_alias=AliasChoices("preferred_expiry", "expiry"),
+        description="Typically near-term, e.g., 'Weekly'.",
+    )
+    reasoning: str = Field(default="", description="Reasoning must focus on risk/reward, max loss, and defined-risk nature of the trade, in Saliba's style.")
+    expected_holding_days: int = Field(default=0)
 
 def tony_saliba_agent(state: AgentState, agent_id: str = "tony_saliba_agent"):
     """

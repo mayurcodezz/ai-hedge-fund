@@ -2,21 +2,31 @@ from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.options_data import fetch_option_chain
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices, ConfigDict
 import json
 from typing import List, Dict, Any
-from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
 
 class LawrenceMcMillanSignal(BaseModel):
-    signal: Literal["bullish", "bearish", "neutral"]
-    confidence: float
-    preferred_structure: Literal["long_call", "long_put", "bull_call_spread", "bear_put_spread", "no_trade"]
-    preferred_strikes: List[int] = Field(default_factory=list)
-    preferred_expiry: str = Field(default="")
-    reasoning: str = Field(..., description="A holistic analysis combining put-call ratios, open interest, and structural market view, per McMillan.")
-    expected_holding_days: int = Field(default=20)
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    signal: str = Field(default="neutral", description="bullish/bearish/neutral/no_trade")
+    confidence: float = Field(default=50.0, description="0-100")
+    preferred_structure: str = Field(
+        default="no_trade",
+        validation_alias=AliasChoices("preferred_structure", "strategy", "structure"),
+    )
+    preferred_strikes: List[int] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("preferred_strikes", "strikes"),
+    )
+    preferred_expiry: str = Field(
+        default="",
+        validation_alias=AliasChoices("preferred_expiry", "expiry"),
+    )
+    reasoning: str = Field(default="", description="A holistic analysis combining put-call ratios, open interest, and structural market view, per McMillan.")
+    expected_holding_days: int = Field(default=0)
 
 def extract_sentiment_indicators(option_chain_data: Dict[str, Any]) -> Dict[str, Any]:
     """Extracts Put-Call Ratio and max Open Interest strikes."""

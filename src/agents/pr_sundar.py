@@ -2,21 +2,33 @@ from src.graph.state import AgentState, show_agent_reasoning
 from src.tools.options_data import fetch_option_chain, compute_iv_percentile
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices, ConfigDict
 import json
 from typing import List
-from typing_extensions import Literal
 from src.utils.progress import progress
 from src.utils.llm import call_llm
 
 class PRSundarSignal(BaseModel):
-    signal: Literal["bullish", "bearish", "neutral", "no_trade"]
-    confidence: float
-    preferred_structure: Literal["short_strangle", "short_straddle", "bull_put_spread", "bear_call_spread", "no_trade"]
-    preferred_strikes: List[int] = Field(default_factory=list, description="OTM strikes for the credit spread or strangle.")
-    preferred_expiry: str = Field(default="Weekly", description="Almost always the nearest weekly expiry.")
-    reasoning: str = Field(..., description="Reasoning focuses on high-probability income generation by selling weekly OTM options on Indian indices.")
-    expected_holding_days: int = Field(default=2, description="Holding until expiry or managed on breach.")
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    signal: str = Field(default="neutral", description="bullish/bearish/neutral/no_trade")
+    confidence: float = Field(default=50.0, description="0-100")
+    preferred_structure: str = Field(
+        default="no_trade",
+        validation_alias=AliasChoices("preferred_structure", "strategy", "structure"),
+    )
+    preferred_strikes: List[int] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("preferred_strikes", "strikes"),
+        description="OTM strikes for the credit spread or strangle.",
+    )
+    preferred_expiry: str = Field(
+        default="Weekly",
+        validation_alias=AliasChoices("preferred_expiry", "expiry"),
+        description="Almost always the nearest weekly expiry.",
+    )
+    reasoning: str = Field(default="", description="Reasoning focuses on high-probability income generation by selling weekly OTM options on Indian indices.")
+    expected_holding_days: int = Field(default=0, description="Holding until expiry or managed on breach.")
 
 def pr_sundar_agent(state: AgentState, agent_id: str = "pr_sundar_agent"):
     """

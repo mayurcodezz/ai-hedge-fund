@@ -1,11 +1,10 @@
 from src.graph.state import AgentState, show_agent_reasoning
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 import json
 import math
 from datetime import datetime, timedelta
-from typing_extensions import Literal
 import numpy as np
 import pandas as pd
 
@@ -24,9 +23,11 @@ from src.utils.api_key import get_api_key_from_state
 
 
 class NassimTalebSignal(BaseModel):
-    signal: Literal["bullish", "bearish", "neutral"]
-    confidence: int = Field(description="Confidence 0-100")
-    reasoning: str = Field(description="Reasoning for the decision")
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    signal: str = Field(default="neutral", description="bullish/bearish/neutral/no_trade")
+    confidence: float = Field(default=50.0, description="0-100")
+    reasoning: str = Field(default="", description="Reasoning for the decision")
 
 
 def nassim_taleb_agent(state: AgentState, agent_id: str = "nassim_taleb_agent"):
