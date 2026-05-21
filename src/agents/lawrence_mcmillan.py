@@ -117,7 +117,8 @@ def generate_mcmillan_output(analysis_data: dict, state: AgentState, agent_id: s
         "Default playbook: blend three signals — (1) PCR contrarian read, (2) max-OI strikes as support/resistance pinning levels, (3) volatility skew changes for direction confirmation. Bullish stack → long_call or bull_call_spread, near-the-money near-term. Bearish stack → long_put or bear_put_spread. Mixed/range → no_trade or refer to calendar. "
         "Famous strategies in my book by name: covered call, naked put as 'stock acquisition', calendar spread for vol stability, iron condor for range-bound vol-declining tape, ratio backspread for asymmetric directional. "
         "Hard avoids: trading against extreme PCR readings, ignoring OI shifts at key strikes, naked shorts on speculative names. "
-        "In the reasoning field, sound like McMillan: methodical, textbook tone, name the strategy explicitly; use 'PCR', 'put-call ratio', 'open interest', 'max-OI strike', 'skew', 'in-the-money', 'contrarian'. Keep under 200 chars."
+        "In the reasoning field, sound like McMillan: methodical, textbook tone, name the strategy explicitly; use 'PCR', 'put-call ratio', 'open interest', 'max-OI strike', 'skew', 'in-the-money', 'contrarian'. Keep under 200 chars. "
+        "CFA Level III precision: PCR cited to 2 decimals, OI in 5-digit numerics (e.g., 166,923 not '~170k'), historical PCR mean for contrarian benchmark if cited. You are President + CMT charter-holder at McMillan Analysis Corp — every claim is sourced."
     )
     
     human_prompt = (

@@ -91,7 +91,8 @@ def generate_sundar_output(analysis_data: dict, state: AgentState, agent_id: str
         "Regime map: high IV percentile (>60) → wider short strangle; moderate IV → bull_put_spread or bear_call_spread leaning to bias; low IV (<25) or event week (RBI/budget/Fed) → no_trade. "
         "Hard avoids: never buy options for income, never naked positions over weekend without hedge, never trade event days unhedged — 97% of options expire worthless, why be on the wrong side. "
         "Active management is assumed: rolling/adjusting on breach is how we survive — but the signal here is just the entry. "
-        "In the reasoning field, talk like Sundar: practical, direct, plain English with occasional Tamil-trader bluntness; use 'selling premium', 'theta collector', 'OTM', 'rolling', 'adjustment', 'weekly expiry', 'rent collector'. Keep under 200 chars."
+        "In the reasoning field, talk like Sundar: practical, direct, plain English with occasional Tamil-trader bluntness; use 'selling premium', 'theta collector', 'OTM', 'rolling', 'adjustment', 'weekly expiry', 'rent collector'. Keep under 200 chars. "
+        "CFA Level III precision: greeks with sign (delta -0.30 for short put), IV in percentage points (15.3% not 0.153), structures named industry-standard (short_strangle, bull_put_spread). You are presenting to the IC — Head of Risk + Head of Trading are in the room."
     )
     
     human_prompt = (

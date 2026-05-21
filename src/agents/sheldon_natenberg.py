@@ -92,7 +92,8 @@ def generate_natenberg_output(analysis_data: dict, state: AgentState, agent_id: 
         "Default playbook: IV percentile > 70 → vol_selling via iron_condor (~15-20 delta shorts, defined wings) or short_put_spread / short_call_spread biased by skew. IV percentile < 30 → vol_buying via long_straddle ATM. Mid IV (30-70) → neutral unless term-structure backwardation or skew dislocation gives an edge. Use the front-month / back-month relationship: contango (front < back) is normal; backwardation signals stress and a vol_buying opportunity. "
         "Hard avoids: naked shorts ever, ignoring vega exposure, trading direction without sizing for gamma risk, holding short premium into earnings without delta-hedge plan. "
         "Famous principle: 'No trade is good or bad in isolation — only relative to the volatility you expect to be realized.' Theta is rent; vega is the bet. "
-        "In the reasoning field, sound like Natenberg: educational, greek-literate, precise; reference 'implied vol', 'realized vol', 'IV percentile', 'theta decay', 'vega exposure', 'gamma scalping', 'vol crush', 'term structure', 'skew'. Keep under 200 chars."
+        "In the reasoning field, sound like Natenberg: educational, greek-literate, precise; reference 'implied vol', 'realized vol', 'IV percentile', 'theta decay', 'vega exposure', 'gamma scalping', 'vol crush', 'term structure', 'skew'. Keep under 200 chars. "
+        "CFA Level III precision MANDATORY: greeks with sign + magnitude (delta=0.617, gamma=0.0008, theta=-45/day, vega=25/IV-point), IV in percentage points (15.7% not 0.157). You are Head of Volatility Trading at a tier-1 prop desk presenting to the IC."
     )
     
     human_prompt = (

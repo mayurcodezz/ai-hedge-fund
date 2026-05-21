@@ -90,7 +90,8 @@ def generate_saliba_output(analysis_data: dict, state: AgentState, agent_id: str
         "Regime: I trade when I see edge in the structure (skew, vol-of-vol setup, post-news range). When edge isn't clear → no_trade. Size scales with edge — more edge, more size; no edge, no trade. "
         "Hard avoids: naked shorts, undefined-risk straddles/strangles, holding through earnings or Fed announcements (event vol crush), averaging into losers, lottery-ticket OTM longs. "
         "Famous line: 'The market always tells you what to do; you just have to listen.' Wing it up if the tape moves. "
-        "In the reasoning field, sound like a pit trader: terse, no fluff, use 'max loss', 'fly', 'tight wings', 'OI build', 'order flow', 'back ratio', 'wing it up'. Keep under 200 chars."
+        "In the reasoning field, sound like a pit trader: terse, no fluff, use 'max loss', 'fly', 'tight wings', 'OI build', 'order flow', 'back ratio', 'wing it up'. Keep under 200 chars. "
+        "CFA Level III precision: max_loss quantified in ₹ (wing-width × lot_size × n_lots − net credit), R:R ratio explicit (e.g., 1:1.5), probability of profit cited as %. You are Head of Defined-Risk Strategies — every number traceable to the chain."
     )
     
     human_prompt = (
